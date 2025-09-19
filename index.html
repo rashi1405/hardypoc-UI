@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Hardy MFG – Upload</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Tailwind (CDN) for styling; remove if you already include it elsewhere -->
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="min-h-screen w-full bg-[radial-gradient(1200px_600px_at_50%_-100px,rgba(148,163,184,0.15),transparent_60%),linear-gradient(180deg,#0a0f1c_0%,#0a0f1c_40%,#111827_100%)] flex items-start sm:items-center justify-center p-4">
+
+    <!-- Upload video card -->
+    <section class="rounded-2xl border border-slate-200/70 md:border-slate-200/70 p-6 sm:p-8 bg-white/95 text-slate-900 shadow-xl max-w-3xl w-full">
+      <!-- Title -->
+      <div class="flex items-center gap-2 mb-4 font-semibold">
+        <!-- upload icon -->
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <path d="M7 10l5-5 5 5" />
+          <path d="M12 15V5" />
+        </svg>
+        Upload video
+      </div>
+
+      <!-- Dropzone -->
+      <div
+        id="dropzone"
+        class="rounded-xl border border-dashed border-slate-300 p-8 text-center transition-colors"
+      >
+        <p class="text-base text-slate-500 mb-4">Drop the inspection video here</p>
+
+        <!-- Hidden file input -->
+        <input id="file-input" type="file" accept="video/mp4,video/*" class="hidden" />
+
+        <!-- Choose file -->
+        <button
+          id="choose-btn"
+          type="button"
+          class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 text-white text-sm"
+        >
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <path d="M7 10l5-5 5 5" />
+            <path d="M12 15V5" />
+          </svg>
+          Choose File
+        </button>
+
+        <div id="file-name" class="mt-2 text-xs text-slate-500 hidden"></div>
+
+
+      <!-- Actions -->
+      <div class="mt-6 flex flex-col sm:flex-row gap-3 sm:gap-2 items-stretch sm:items-center justify-between">
+        <button
+          id="generate-btn"
+          type="button"
+          class="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-slate-900 text-white text-sm w-full sm:w-auto disabled:opacity-60"
+        >
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M8 5v14l11-7z" />
+          </svg>
+          <span id="generate-label">Generate report</span>
+        </button>
+
+        <button
+          id="download-btn"
+          type="button"
+          class="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-slate-200 text-sm w-full sm:w-auto disabled:opacity-60"
+          disabled
+        >
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <path d="M7 10l5 5 5-5" />
+            <path d="M12 4v11" />
+          </svg>
+          Download
+        </button>
+      </div>
+
+      <!-- Status strip -->
+      <div class="mt-3 text-xs text-slate-500 flex items-center justify-between">
+        <div>Run: <span id="run-id" class="font-mono text-slate-700">—</span></div>
+        <div>Progress: <span id="progress-val">0</span>%</div>
+      </div>
+
+      <!-- Error -->
+      <div id="error-box" class="mt-2 text-xs text-red-600 hidden"></div>
+    </section>
+
+    <script>
+      // ======= CONFIG =======
+      const S3_API_URL = 'http://0.0.0.0:8000/initiate-upload-with-urls';
+      const S3_COMPLETE_URL = 'http://0.0.0.0:8000/complete-upload/';
+      const PROCESS_VIDEO_URL = 'http://0.0.0.0:8000/process-video/';
+    
+      // ======= ELEMENTS =======
+      const dropzone = document.getElementById("dropzone");
+      const fileInput = document.getElementById("file-input");
+      const chooseBtn = document.getElementById("choose-btn");
+      const fileNameEl = document.getElementById("file-name");
+      const generateBtn = document.getElementById("generate-btn");
+      const generateLabel = document.getElementById("generate-label");
+      const downloadBtn = document.getElementById("download-btn");
+      const runIdEl = document.getElementById("run-id");
+      const progressEl = document.getElementById("progress-val");
+      const errorBox = document.getElementById("error-box");
+    
+      // ======= STATE =======
+      let selectedFile = null;
+      let s3SelectedFile = null;
+      let s3FileUrl = null;
+      let downloadPath = null;
+    
+      // ======= HELPERS =======
+      function setError(msg) {
+        if (!msg) {
+          errorBox.classList.add("hidden");
+          errorBox.textContent = "";
+        } else {
+          errorBox.classList.remove("hidden");
+          errorBox.textContent = msg;
+        }
+      }
+    
+      function setBusy(isBusy) {
+        generateBtn.disabled = isBusy;
+        generateLabel.textContent = isBusy ? "Processing…" : "Generate report";
+      }
+    
+      function showFileName(name) {
+        fileNameEl.classList.remove("hidden");
+        fileNameEl.textContent = "Selected: " + name;
+      }
+    
+      function setDownloadEnabled(url) {
+        downloadPath = url || null;
+        downloadBtn.disabled = !downloadPath;
+      }
+    
+      // ======= S3 UPLOAD FUNCTIONS =======
+      async function s3GetPresignedUrls(file) {
+        const partSize = Math.max(10 * 1024 * 1024, Math.ceil(file.size / 10000));
+        const partCount = Math.ceil(file.size / partSize);
+    
+        const res = await fetch(S3_API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fileName: file.name, contentType: file.type, partCount })
+        });
+        if (!res.ok) throw new Error('Failed to get presigned URLs');
+    
+        return await res.json(); // { uploadId, presignedUrls }
+      }
+    
+      async function s3UploadParts(file, presignedUrls, partSize) {
+        const completedParts = [];
+        for (let i = 0; i < presignedUrls.length; i++) {
+          const start = i * partSize;
+          const end = Math.min(start + partSize, file.size);
+          const partData = file.slice(start, end);
+    
+          const url = presignedUrls[i].url;
+          const partNumber = presignedUrls[i].partNumber;
+    
+          const res = await fetch(url, { method: 'PUT', body: partData, headers: { 'Content-Type': file.type } });
+          if (!res.ok) throw new Error(`Failed to upload part ${partNumber}`);
+          const etag = res.headers.get('ETag');
+          if (!etag) throw new Error(`No ETag for part ${partNumber}`);
+    
+          completedParts.push({ PartNumber: partNumber, ETag: etag });
+          progressEl.textContent = Math.round(((i + 1) / presignedUrls.length) * 100);
+        }
+        return completedParts;
+      }
+    
+      async function s3CompleteUpload(uploadId, fileName, parts) {
+        const res = await fetch(S3_COMPLETE_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ uploadId, parts, fileName })
+        });
+        if (!res.ok) throw new Error('Failed to complete upload');
+        const data = await res.json();
+        return data.fileUrl; // S3 URL of uploaded video
+      }
+    
+      // ======= PROCESS VIDEO =======
+      async function processVideoOnBackend(s3FileUrl) {
+        const res = await fetch(PROCESS_VIDEO_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fileUrl: s3FileUrl })
+        });
+        if (!res.ok) throw new Error('Failed to process video');
+        const data = await res.json();
+        if (!data.download_url) throw new Error('No download URL received');
+        return data.download_url;
+      }
+    
+      // ======= EVENTS =======
+      // Drag & Drop
+      dropzone.addEventListener("dragover", e => { e.preventDefault(); dropzone.classList.add("border-slate-500", "bg-slate-50"); });
+      dropzone.addEventListener("dragleave", () => { dropzone.classList.remove("border-slate-500", "bg-slate-50"); });
+      dropzone.addEventListener("drop", e => {
+        e.preventDefault();
+        dropzone.classList.remove("border-slate-500", "bg-slate-50");
+        const f = e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f) { selectedFile = s3SelectedFile = f; showFileName(f.name); setError(null); }
+      });
+    
+      // Choose File
+      chooseBtn.addEventListener("click", () => fileInput.click());
+      fileInput.addEventListener("change", async e => {
+        const f = e.target.files && e.target.files[0];
+        if (!f) return;
+    
+        selectedFile = s3SelectedFile = f;
+        showFileName(f.name);
+        setError(null);
+        setBusy(true);
+    
+        try {
+          // Upload to S3 immediately
+          const { uploadId, presignedUrls } = await s3GetPresignedUrls(f);
+          const completedParts = await s3UploadParts(f, presignedUrls, Math.max(10 * 1024 * 1024, Math.ceil(f.size / 10000)));
+          s3FileUrl = await s3CompleteUpload(uploadId, f.name, completedParts);
+          setError("Upload completed. Click 'Generate report' to process.");
+        } catch (err) {
+          setError("S3 Upload failed: " + err.message);
+        } finally {
+          setBusy(false);
+        }
+      });
+    
+      // Generate report (call /process-video/)
+      generateBtn.addEventListener("click", async () => {
+        if (!s3FileUrl) {
+          setError("No uploaded file found. Please select a file first.");
+          return;
+        }
+        setBusy(true);
+        setDownloadEnabled(null);
+        try {
+          const downloadUrl = await processVideoOnBackend(s3FileUrl);
+          setDownloadEnabled(downloadUrl);
+          alert("Processing completed! You can download the report now.");
+        } catch (err) {
+          setError("Processing failed: " + err.message);
+        } finally {
+          setBusy(false);
+        }
+      });
+    
+      // Download button
+      downloadBtn.addEventListener('click', () => {
+        if (!downloadPath) { setError("No file ready for download yet."); return; }
+        const a = document.createElement('a');
+        a.href = downloadPath;
+        a.download = s3SelectedFile.name.replace(/\.[^/.]+$/, ".csv");
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setError("Download started!", null);
+      });
+    </script>
+  </body>
+</html>

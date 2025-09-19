@@ -1,0 +1,21 @@
+body {
+  font-family: system-ui, sans-serif;
+}
+
+#file-name {
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+
+.hidden {
+  display: none;
+}
+
+#error-box {
+  color: #dc2626;
+  font-size: 0.75rem;
+}
+
+#progress-val {
+  font-weight: bold;
+}
