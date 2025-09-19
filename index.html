@@ -232,55 +232,74 @@
         }
       });
     
-      // Generate report (call /process-video/)
+              // Generate report (call /process-video/)
       generateBtn.addEventListener("click", async () => {
         if (!s3FileUrl) {
           setError("No uploaded file found. Please select a file first.");
           return;
         }
+
         setBusy(true);
-        setDownloadEnabled(null);
+        setDownloadEnabled(null); // disable button initially
         try {
           const downloadUrl = await processVideoOnBackend(s3FileUrl);
-          setDownloadEnabled(downloadUrl);
-          setError("Processing completed! You can download the report now.");
+
+          setError("Processing started. Please wait...");
+
+          
+          // Poll S3 every 5 seconds until file exists
+        const interval = setInterval(async () => {
+          try {
+            const res = await fetch(downloadUrl, { method: "HEAD" });
+            if (res.ok) {
+              clearInterval(interval);
+              setDownloadEnabled(downloadUrl); // enable Download button
+              setError("Report ready! You can download it now.");
+            } else {
+              setError("Still processing... please wait.");
+            }
+          } catch (_) {
+            setError("Still processing... please wait.");
+          }
+        }, 5000);
+
         } catch (err) {
           setError("Processing failed: " + err.message);
         } finally {
           setBusy(false);
         }
       });
-    
+
       // Download button
       downloadBtn.addEventListener("click", async () => {
         if (!downloadPath) {
           setError("No file ready for download yet.");
           return;
         }
-      
+
         try {
           const response = await fetch(downloadPath);
           if (!response.ok) throw new Error("Download failed");
-      
+
           const blob = await response.blob();
           const url = window.URL.createObjectURL(blob);
-      
+
           const a = document.createElement("a");
           a.href = url;
           a.download = s3SelectedFile.name.replace(/\.[^/.]+$/, ".csv");
           document.body.appendChild(a);
           a.click();
-      
+
           // Cleanup
           a.remove();
           window.URL.revokeObjectURL(url);
-      
+
           setError("Download started!", null);
         } catch (err) {
           setError("Download failed: " + err.message);
         }
       });
-      
+            
     </script>
   </body>
 </html>
