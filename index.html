@@ -243,7 +243,7 @@
         try {
           const downloadUrl = await processVideoOnBackend(s3FileUrl);
           setDownloadEnabled(downloadUrl);
-          alert("Processing completed! You can download the report now.");
+          setError("Processing completed! You can download the report now.");
         } catch (err) {
           setError("Processing failed: " + err.message);
         } finally {
@@ -252,16 +252,35 @@
       });
     
       // Download button
-      downloadBtn.addEventListener('click', () => {
-        if (!downloadPath) { setError("No file ready for download yet."); return; }
-        const a = document.createElement('a');
-        a.href = downloadPath;
-        a.download = s3SelectedFile.name.replace(/\.[^/.]+$/, ".csv");
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setError("Download started!", null);
+      downloadBtn.addEventListener("click", async () => {
+        if (!downloadPath) {
+          setError("No file ready for download yet.");
+          return;
+        }
+      
+        try {
+          const response = await fetch(downloadPath);
+          if (!response.ok) throw new Error("Download failed");
+      
+          const blob = await response.blob();
+          const url = window.URL.createObjectURL(blob);
+      
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = s3SelectedFile.name.replace(/\.[^/.]+$/, ".csv");
+          document.body.appendChild(a);
+          a.click();
+      
+          // Cleanup
+          a.remove();
+          window.URL.revokeObjectURL(url);
+      
+          setError("Download started!", null);
+        } catch (err) {
+          setError("Download failed: " + err.message);
+        }
       });
+      
     </script>
   </body>
 </html>
